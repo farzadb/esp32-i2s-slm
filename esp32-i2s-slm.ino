@@ -40,6 +40,18 @@
 
 #include <driver/i2s.h>
 #include "sos-iir-filter.h"
+#include "secrets.h"
+#include <WiFi.h>
+#include <ArduinoMqttClient.h>
+#include <WiFiClientSecure.h>
+#include "lets_encrypt_ca.h"
+
+WiFiClientSecure wc;
+MqttClient mqttClient(wc);
+const char broker[] = "webhost.protospace.ca";
+int        port     = 8883;
+
+void (* resetFunc) (void) = 0;
 
 //
 // Configuration
@@ -74,9 +86,9 @@ constexpr double MIC_REF_AMPL = pow(10, double(MIC_SENSITIVITY)/20) * ((1<<(MIC_
 //
 // Below ones are just example for my board layout, put here the pins you will use
 //
-#define I2S_WS            18 
+#define I2S_WS            32 
 #define I2S_SCK           23 
-#define I2S_SD            19 
+#define I2S_SD            27 
 
 // I2S peripheral to use (0 or 1)
 #define I2S_PORT          I2S_NUM_0
@@ -87,9 +99,9 @@ constexpr double MIC_REF_AMPL = pow(10, double(MIC_SENSITIVITY)/20) * ((1<<(MIC_
 #if (USE_DISPLAY > 0)
   // ThingPulse/esp8266-oled-ssd1306, you may need the latest source and PR#198 for 64x48
   #include <SSD1306Wire.h>
-  #define OLED_GEOMETRY     GEOMETRY_64_48
+  //#define OLED_GEOMETRY     GEOMETRY_64_48
   //#define OLED_GEOMETRY GEOMETRY_128_32
-  //#define OLED_GEOMETRY GEOMETRY_128_64
+  #define OLED_GEOMETRY GEOMETRY_128_64
   #define OLED_FLIP_V       1
   SSD1306Wire display(0x3c, SDA, SCL, OLED_GEOMETRY);
 #endif
@@ -360,6 +372,8 @@ void setup() {
   
   Serial.begin(112500);
   delay(1000); // Safety
+
+  setupMQTT();  
   
   #if (USE_DISPLAY > 0)
     display.init();
@@ -384,7 +398,7 @@ void setup() {
   double Leq_sum_sqr = 0;
   double Leq_dB = 0;
 
-  // Read sum of samaples, calculated by 'i2s_reader_task'
+  // Read sum of samples, calculated by 'i2s_reader_task'
   while (xQueueReceive(samples_queue, &q, portMAX_DELAY)) {
 
     // Calculate dB values relative to MIC_REF_AMPL and adjust for microphone reference
@@ -454,4 +468,52 @@ void setup() {
 
 void loop() {
   // Nothing here..
+}
+
+void setupMQTT() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+
+  // Synchronize time using NTP. This is necessary to verify that
+  // the TLS certificates offered by the server are currently valid.
+  Serial.print("Setting time using NTP");
+  configTime(8 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  time_t now = time(nullptr);
+  while (now < 8 * 3600 * 2) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+  Serial.println("");
+  struct tm timeinfo;
+  gmtime_r(&now, &timeinfo);
+  Serial.print("Current time: ");
+  Serial.print(asctime(&timeinfo));
+
+  X509List cert(lets_encrypt_ca);
+  wc.setTrustAnchors(&cert);
+  
+  mqttClient.setUsernamePassword(MQTT_USERNAME, MQTT_PASSWORD);
+
+  Serial.printf("[MQTT] Connecting to broker...\n");
+
+  if (!mqttClient.connect(broker, port)) {
+    Serial.print("[MQTT] Connection failed! Error code = ");
+    Serial.println(mqttClient.connectError());
+    Serial.printf("Resetting Arduino...\n");
+    resetFunc();
+  }
+  mqttClient.beginMessage("/test/air/1/pm25");
+  mqttClient.print("Boot up");
+  mqttClient.endMessage();
+
+  mqttClient.beginMessage("sensors/air/0/log");
+  mqttClient.print("DSM501 ready");
+  mqttClient.endMessage();    
 }
