@@ -55,8 +55,8 @@ WiFiClientSecure wc;
 MqttClient mqttClient(wc);
 const char broker[] = "webhost.protospace.ca";
 int        port     = 8883;
-#define SOUND_DB_TOPIC   "test/sound/0/db"
-#define LOG_TOPIC    "test/sound/0/log"
+#define SOUND_DB_TOPIC   "sensors/sound/0/db"
+#define LOG_TOPIC    "sensors/sound/0/log"
   
 void (* resetFunc) (void) = 0;
 
@@ -396,9 +396,6 @@ void setupMQTT() {
   Serial.print("Current time: ");
   Serial.print(asctime(&timeinfo));
 
-
-  //X509List cert(lets_encrypt_ca);
-  //wc.setTrustAnchors(&cert);
   wc.setCACert(lets_encrypt_ca);
   
   mqttClient.setUsernamePassword(MQTT_USERNAME, MQTT_PASSWORD);
@@ -408,17 +405,18 @@ void setupMQTT() {
   if (!mqttClient.connect(broker, port)) {
     Serial.print("[MQTT] Connection failed! Error code = ");
     Serial.println(mqttClient.connectError());
-    //Serial.printf("Resetting Arduino...\n");
-    //resetFunc();
+    Serial.printf("[MQTT] Resetting Arduino...\n");
+    resetFunc();
   }
   sendMqtt(LOG_TOPIC, "ESP32 Sound level meter bootup");
 }
 
 
 void sendMqtt(String topic, String msg) {
-  Serial.println("Begin MQTT message");
+  //Serial.println("Begin MQTT message");
   mqttClient.beginMessage(topic);
   mqttClient.print(msg);
   mqttClient.endMessage();
-  Serial.println("End MQTT message");
+  //TODO Add error handling code here 
+  //Serial.println("End MQTT message");
 }
