@@ -47,6 +47,14 @@
 #include "lets_encrypt_ca.h"
 #include "filters.h"
 
+// ThingPulse/esp8266-oled-ssd1306, you may need the latest source and PR#198 for 64x48
+#include <SSD1306Wire.h>
+//#define OLED_GEOMETRY     GEOMETRY_64_48
+//#define OLED_GEOMETRY GEOMETRY_128_32
+#define OLED_GEOMETRY GEOMETRY_128_64
+#define OLED_FLIP_V       1
+SSD1306Wire display(0x3c, SDA, SCL, OLED_GEOMETRY);
+
 //
 // MQTT Config
 //
@@ -56,7 +64,7 @@ MqttClient mqttClient(wc);
 const char broker[] = "webhost.protospace.ca";
 int        port     = 8883;
 #define SOUND_DB_TOPIC   "sensors/sound/0/db"
-#define LOG_TOPIC    "sensors/sound/0/log"
+#define SOUND_LOG_TOPIC    "sensors/sound/0/log"
   
 void (* resetFunc) (void) = 0;
 
@@ -64,7 +72,7 @@ void (* resetFunc) (void) = 0;
 // Configuration
 //
 
-#define LEQ_PERIOD        1           // second(s)
+#define LEQ_PERIOD        5           // second(s)
 #define WEIGHTING         C_weighting // Also avaliable: 'C_weighting' or 'None' (Z_weighting)
 #define LEQ_UNITS         "LAeq"      // customize based on above weighting used
 #define DB_UNITS          "dBA"       // customize based on above weighting used
@@ -99,20 +107,6 @@ constexpr double MIC_REF_AMPL = pow(10, double(MIC_SENSITIVITY)/20) * ((1<<(MIC_
 
 // I2S peripheral to use (0 or 1)
 #define I2S_PORT          I2S_NUM_0
-
-//
-// Setup your display library (and geometry) here
-// 
-#if (USE_DISPLAY > 0)
-  // ThingPulse/esp8266-oled-ssd1306, you may need the latest source and PR#198 for 64x48
-  #include <SSD1306Wire.h>
-  //#define OLED_GEOMETRY     GEOMETRY_64_48
-  //#define OLED_GEOMETRY GEOMETRY_128_32
-  #define OLED_GEOMETRY GEOMETRY_128_64
-  #define OLED_FLIP_V       1
-  SSD1306Wire display(0x3c, SDA, SCL, OLED_GEOMETRY);
-#endif
-
 
 //
 // Sampling
@@ -205,7 +199,6 @@ void mic_i2s_init() {
 #define I2S_TASK_STACK 2048
 //
 void mic_i2s_reader_task(void* parameter) {
-  //Serial.println("Debug 1");
   mic_i2s_init();
 
 
@@ -214,7 +207,6 @@ void mic_i2s_reader_task(void* parameter) {
   i2s_read(I2S_PORT, &samples, SAMPLES_SHORT * sizeof(int32_t), &bytes_read, portMAX_DELAY);
 
   while (true) {
-    //Serial.println("Debug 2");
     // Block and wait for microphone values from I2S
     //
     // Data is moved from DMA buffers to our 'samples' buffer by the driver ISR
@@ -265,16 +257,22 @@ void setup() {
   delay(1000); // Safety
 
   setupMQTT();  
-  //Serial.println("Debug 3");
-  
-  #if (USE_DISPLAY > 0)
-    display.init();
-    #if (OLED_FLIP_V > 0)
-      display.flipScreenVertically();
-    #endif
-    display.setFont(ArialMT_Plain_16);
-  #endif
 
+  
+  if (USE_DISPLAY > 0) {
+    Serial.println("Init display.");
+    if (display.init() == true) {
+      if (OLED_FLIP_V > 0) {
+        display.flipScreenVertically();
+      }
+      display.setFont(ArialMT_Plain_16);
+    } 
+    else {
+      sendMqtt(SOUND_LOG_TOPIC, "ESP32 Sound level meter init display failed");
+      Serial.println("Display Init failed.");
+    }   
+  }    
+ 
   // Create FreeRTOS queue
   samples_queue = xQueueCreate(8, sizeof(sum_queue_t));
   
@@ -292,7 +290,6 @@ void setup() {
 
   // Read sum of samples, calculated by 'i2s_reader_task'
   while (xQueueReceive(samples_queue, &q, portMAX_DELAY)) {
-    //Serial.println("Debug 4");
 
     // Calculate dB values relative to MIC_REF_AMPL and adjust for microphone reference
     double short_RMS = sqrt(double(q.sum_sqr_SPL) / SAMPLES_SHORT);
@@ -311,7 +308,6 @@ void setup() {
 
     // When we gather enough samples, calculate new Leq value
     if (Leq_samples >= SAMPLE_RATE * LEQ_PERIOD) {
-      //Serial.println("Debug 5");
       double Leq_RMS = sqrt(Leq_sum_sqr / Leq_samples);
       Leq_dB = MIC_OFFSET_DB + MIC_REF_DB + 20 * log10(Leq_RMS / MIC_REF_AMPL);
       Leq_sum_sqr = 0;
@@ -328,7 +324,7 @@ void setup() {
       //Serial.printf("%u processing ticks\n", q.proc_ticks);
     }
 
-    #if (USE_DISPLAY > 0)
+    if (USE_DISPLAY > 0) {
 
       //
       // Example code that displays the measured value.
@@ -362,7 +358,7 @@ void setup() {
       
       display.display();
       
-    #endif // USE_DISPLAY
+    } // USE_DISPLAY
   }
 }
 
@@ -408,15 +404,20 @@ void setupMQTT() {
     Serial.printf("[MQTT] Resetting Arduino...\n");
     resetFunc();
   }
-  sendMqtt(LOG_TOPIC, "ESP32 Sound level meter bootup");
+  sendMqtt(SOUND_LOG_TOPIC, "ESP32 sound level meter bootup");
 }
 
 
 void sendMqtt(String topic, String msg) {
-  //Serial.println("Begin MQTT message");
+  // Does beginMessage() check if the connection is up and reconnect if it's down? Maybe we should check the WiFi connection here? 
+  if (WiFi.status() != WL_CONNECTED) {
+    setupMQTT();   
+    mqttClient.beginMessage(SOUND_LOG_TOPIC);
+    mqttClient.print("Reset WiFi connection");
+    mqttClient.endMessage();     
+  }  
   mqttClient.beginMessage(topic);
   mqttClient.print(msg);
   mqttClient.endMessage();
-  //TODO Add error handling code here 
-  //Serial.println("End MQTT message");
+  //TODO Add error handling code here?
 }
