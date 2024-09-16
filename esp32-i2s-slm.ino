@@ -38,17 +38,17 @@
  * response and numeric LAeq(1sec) dB value from the signal RMS.
  */
 
-#include <driver/i2s.h>
+#include <driver/i2s.h> // This code only works with esp board manager v2.0.3 and earlier
 #include "sos-iir-filter.h"
 #include "secrets.h"
 #include <WiFi.h>
-#include <ArduinoMqttClient.h>
+#include <ArduinoMqttClient.h> // v0.1.8
 #include <WiFiClientSecure.h>
 #include "lets_encrypt_ca.h"
 #include "filters.h"
 
 // ThingPulse/esp8266-oled-ssd1306, you may need the latest source and PR#198 for 64x48
-#include <SSD1306Wire.h>
+#include <SSD1306Wire.h> // v4.4.1
 //#define OLED_GEOMETRY     GEOMETRY_64_48
 //#define OLED_GEOMETRY GEOMETRY_128_32
 #define OLED_GEOMETRY GEOMETRY_128_64
@@ -76,7 +76,7 @@ void (* resetFunc) (void) = 0;
 #define WEIGHTING         C_weighting // Also avaliable: 'C_weighting' or 'None' (Z_weighting)
 #define LEQ_UNITS         "LAeq"      // customize based on above weighting used
 #define DB_UNITS          "dBA"       // customize based on above weighting used
-#define USE_DISPLAY       1
+#define USE_DISPLAY       0
 
 // NOTE: Some microphones require at least DC-Blocker filter
 #define MIC_EQUALIZER     ICS43434    // See below for defined IIR filters or set to 'None' to disable
@@ -101,9 +101,9 @@ constexpr double MIC_REF_AMPL = pow(10, double(MIC_SENSITIVITY)/20) * ((1<<(MIC_
 //
 // Below ones are just example for my board layout, put here the pins you will use
 //
-#define I2S_WS            32 
-#define I2S_SCK           23 
-#define I2S_SD            27 
+#define I2S_WS            32 // (yellow) 
+#define I2S_SCK           23 // (green) 
+#define I2S_SD            27 // (orange)
 
 // I2S peripheral to use (0 or 1)
 #define I2S_PORT          I2S_NUM_0
@@ -161,8 +161,11 @@ void mic_i2s_init() {
     data_in_num:  I2S_SD   
   };
 
-  i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
-
+  int err = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+  if (err != 0) {
+    Serial.printf("Error installing I2S driver: %d", err);
+    while(1);
+    }
   #if (MIC_TIMING_SHIFT > 0) 
     // Undocumented (?!) manipulation of I2S peripheral registers
     // to fix MSB timing issues with some I2S microphones
@@ -204,7 +207,10 @@ void mic_i2s_reader_task(void* parameter) {
 
   // Discard first block, microphone may have startup time (i.e. INMP441 up to 83ms)
   size_t bytes_read = 0;
-  i2s_read(I2S_PORT, &samples, SAMPLES_SHORT * sizeof(int32_t), &bytes_read, portMAX_DELAY);
+  esp_err_t result = i2s_read(I2S_PORT, &samples, SAMPLES_SHORT * sizeof(int32_t), &bytes_read, portMAX_DELAY);
+  if (result != ESP_OK) {
+    Serial.printf("Error reading from I2S device: %d", result);
+  }
 
   while (true) {
     // Block and wait for microphone values from I2S
@@ -214,7 +220,10 @@ void mic_i2s_reader_task(void* parameter) {
     //
     // Note: i2s_read does not care it is writing in float[] buffer, it will write
     //       integer values to the given address, as received from the hardware peripheral. 
-    i2s_read(I2S_PORT, &samples, SAMPLES_SHORT * sizeof(SAMPLE_T), &bytes_read, portMAX_DELAY);
+    result = i2s_read(I2S_PORT, &samples, SAMPLES_SHORT * sizeof(SAMPLE_T), &bytes_read, portMAX_DELAY);
+    if (result != ESP_OK) {
+      Serial.printf("Error reading from I2S device: %d", result);
+    }
 
     TickType_t start_tick = xTaskGetTickCount();
     
@@ -321,7 +330,7 @@ void setup() {
       sendMqtt(SOUND_DB_TOPIC, db);
 
       // Debug only
-      //Serial.printf("%u processing ticks\n", q.proc_ticks);
+      // Serial.printf("%u processing ticks\n", q.proc_ticks);
     }
 
     if (USE_DISPLAY > 0) {
@@ -392,7 +401,9 @@ void setupMQTT() {
   Serial.print("Current time: ");
   Serial.print(asctime(&timeinfo));
 
-  wc.setCACert(lets_encrypt_ca);
+  //wc.setCACert(lets_encrypt_ca);  
+  wc.setInsecure();
+
   
   mqttClient.setUsernamePassword(MQTT_USERNAME, MQTT_PASSWORD);
 
@@ -404,6 +415,7 @@ void setupMQTT() {
     Serial.printf("[MQTT] Resetting Arduino...\n");
     resetFunc();
   }
+  Serial.printf("[MQTT] Succesfully connected to broker...\n");
   sendMqtt(SOUND_LOG_TOPIC, "ESP32 sound level meter bootup");
 }
 
