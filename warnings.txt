@@ -1,0 +1,22 @@
+Compiler warnings when using esp32 core v2.0.3
+This code breaks in later versions of the core and I suspect it's related to these warnings
+
+
+
+C:\Users\farza\OneDrive\Documents\GitHub\esp32-i2s-slm\esp32-i2s-slm.ino: In function 'void mic_i2s_init()':
+C:\Users\farza\OneDrive\Documents\GitHub\esp32-i2s-slm\esp32-i2s-slm.ino:148:45: warning: 'I2S_COMM_FORMAT_I2S' is deprecated [-Wdeprecated-declarations]
+     communication_format: i2s_comm_format_t(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
+                                             ^~~~~~~~~~~~~~~~~~~
+In file included from C:\Users\farza\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.3/tools/sdk/esp32/include/driver/include/driver/i2s.h:16,
+                 from C:\Users\farza\OneDrive\Documents\GitHub\esp32-i2s-slm\esp32-i2s-slm.ino:41:
+C:\Users\farza\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.3/tools/sdk/esp32/include/hal/include/hal/i2s_types.h:87:5: note: declared here
+     I2S_COMM_FORMAT_I2S       __attribute__((deprecated)) = 0x01, /*!< I2S communication format I2S, correspond to `I2S_COMM_FORMAT_STAND_I2S`*/
+     ^~~~~~~~~~~~~~~~~~~
+C:\Users\farza\OneDrive\Documents\GitHub\esp32-i2s-slm\esp32-i2s-slm.ino:148:67: warning: 'I2S_COMM_FORMAT_I2S_MSB' is deprecated [-Wdeprecated-declarations]
+     communication_format: i2s_comm_format_t(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
+                                                                   ^~~~~~~~~~~~~~~~~~~~~~~
+In file included from C:\Users\farza\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.3/tools/sdk/esp32/include/driver/include/driver/i2s.h:16,
+                 from C:\Users\farza\OneDrive\Documents\GitHub\esp32-i2s-slm\esp32-i2s-slm.ino:41:
+C:\Users\farza\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.3/tools/sdk/esp32/include/hal/include/hal/i2s_types.h:88:5: note: declared here
+     I2S_COMM_FORMAT_I2S_MSB   __attribute__((deprecated)) = 0x01, /*!< I2S format MSB, (I2S_COMM_FORMAT_I2S |I2S_COMM_FORMAT_I2S_MSB) correspond to `I2S_COMM_FORMAT_STAND_I2S`*/
+     ^~~~~~~~~~~~~~~~~~~~~~~
